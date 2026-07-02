@@ -456,7 +456,7 @@ export async function editAssistantMessage(assistantMessageId: string, newConten
   }
 }
 
-const BLOCK_UPDATE_BATCH_INTERVAL = 180
+const BLOCK_UPDATE_BATCH_INTERVAL = 500
 type BlockUpdatePayload = Partial<MessageBlock>
 
 const pendingBlockUpdates = new Map<string, BlockUpdatePayload>()

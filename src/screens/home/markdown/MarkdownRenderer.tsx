@@ -4,6 +4,8 @@ import { View } from 'react-native'
 import type { MarkdownNode } from 'react-native-nitro-markdown'
 import { parseMarkdownWithOptions } from 'react-native-nitro-markdown'
 
+import { loggerService } from '@/services/LoggerService'
+
 import {
   MarkdownBlockquote,
   MarkdownBold,
@@ -34,16 +36,40 @@ import {
 import { headingClasses } from './markdownItem/MarkdownHeading'
 import { SelectableText } from './markdownItem/SelectableText'
 
+const logger = loggerService.withContext('MarkdownRenderer')
+
 interface MarkdownRendererProps {
   content: string
+  /**
+   * Streaming answers update many times per second. On Android 16, repeatedly
+   * invoking the native markdown parser / UITextView tree while tokens arrive
+   * can crash the app. Render plain selectable text during streaming, then
+   * enable full markdown once the block is complete.
+   */
+  enableMarkdown?: boolean
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, enableMarkdown = true }: MarkdownRendererProps) {
   const ast = useMemo(() => {
-    return parseMarkdownWithOptions(content, { gfm: true, math: true })
-  }, [content])
+    if (!enableMarkdown) return null
+
+    try {
+      return parseMarkdownWithOptions(content, { gfm: true, math: true })
+    } catch (error) {
+      logger.warn('Failed to parse markdown; falling back to plain text', error)
+      return null
+    }
+  }, [content, enableMarkdown])
+
+  if (!ast) {
+    return <PlainTextRenderer content={content} />
+  }
 
   return <NodeRenderer node={ast} />
+}
+
+function PlainTextRenderer({ content }: { content: string }) {
+  return <SelectableText className="text-foreground text-base my-2">{content}</SelectableText>
 }
 
 interface NodeRendererProps {

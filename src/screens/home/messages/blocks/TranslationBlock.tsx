@@ -6,6 +6,7 @@ import { View } from 'react-native'
 import { XStack } from '@/componentsV2'
 import { Languages } from '@/componentsV2/icons/LucideIcon'
 import type { TranslationMessageBlock } from '@/types/message'
+import { MessageBlockStatus } from '@/types/message'
 import { escapeBrackets, removeSvgEmptyLines } from '@/utils/formats'
 
 import { MarkdownRenderer } from '../../markdown/MarkdownRenderer'
@@ -26,7 +27,7 @@ const TranslationBlock: FC<Props> = ({ block }) => {
         <Languages size={16} className="text-gray-700" />
         <Divider className="flex-1 bg-zinc-400/40" thickness={1} />
       </XStack>
-      <MarkdownRenderer content={getContent()} />
+      <MarkdownRenderer content={getContent()} enableMarkdown={block.status !== MessageBlockStatus.STREAMING} />
     </View>
   )
 }

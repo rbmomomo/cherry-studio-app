@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { View } from 'react-native'
 
 import type { MainTextMessageBlock } from '@/types/message'
+import { MessageBlockStatus } from '@/types/message'
 import { escapeBrackets, removeSvgEmptyLines } from '@/utils/formats'
 
 import { MarkdownRenderer } from '../../markdown/MarkdownRenderer'
@@ -26,7 +27,7 @@ const MainTextBlock: React.FC<Props> = ({ block }) => {
 
   return (
     <View>
-      <MarkdownRenderer content={getContent()} />
+      <MarkdownRenderer content={getContent()} enableMarkdown={block.status !== MessageBlockStatus.STREAMING} />
     </View>
   )
 }

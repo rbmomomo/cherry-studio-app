@@ -1,0 +1,95 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - 'android-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. android-v0.1.7-fix1'
+        required: true
+        default: 'android-v0.1.7-fix1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    name: Build and publish Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace package
+        run: pnpm --filter @cherrystudio/react-native-streamable-http run build
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Generate Android native project
+        run: pnpm exec expo prebuild --platform android --clean
+
+      - name: Build release APK
+        run: ./android/gradlew -p android :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Prepare APK artifact
+        id: artifact
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          fi
+          APK_NAME="CherryStudio-${TAG}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK_NAME"
+
+      - name: Create GitHub Release and upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.artifact.outputs.tag }}
+          name: Cherry Studio ${{ steps.artifact.outputs.tag }}
+          body: |
+            Android APK build with fixes for Android 16 streaming-message crashes.
+
+            Changes:
+            - Avoid realtime Markdown parsing during streaming output
+            - Fallback to plain text when Markdown parsing fails
+            - Reduce streaming block update frequency
+            - Add global JS error logging and React error boundary
+
+            Install the APK from the asset below.
+          files: ${{ steps.artifact.outputs.apk_name }}
+          draft: false
+          prerelease: true

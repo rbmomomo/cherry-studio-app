@@ -1,6 +1,8 @@
 import '@/i18n'
 import 'react-native-reanimated'
 
+import { installGlobalErrorHandlers } from '@/services/GlobalErrorHandler'
+
 import { db, expoDb } from '@db'
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native'
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator'
@@ -19,6 +21,7 @@ import { PersistGate } from 'redux-persist/integration/react'
 import { Uniwind } from 'uniwind'
 
 import { DialogManager } from '@/componentsV2'
+import { AppErrorBoundary } from '@/componentsV2/features/AppErrorBoundary'
 import SheetManager from '@/componentsV2/features/Sheet/SheetManager'
 import { UpdatePrompt } from '@/componentsV2/features/UpdatePrompt'
 import { useTheme } from '@/hooks/useTheme'
@@ -31,6 +34,8 @@ import { DialogProvider } from './hooks/useDialog'
 import { ToastProvider } from './hooks/useToast'
 import MainStackNavigator from './navigators/MainStackNavigator'
 import { runAppDataMigrations } from './services/AppInitializationService'
+
+installGlobalErrorHandlers()
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync()
@@ -135,10 +140,12 @@ function AppWithRedux() {
 // 根组件 - 只负责最基础的 Provider 设置
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppWithRedux />
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <AppErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AppWithRedux />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </AppErrorBoundary>
   )
 }
