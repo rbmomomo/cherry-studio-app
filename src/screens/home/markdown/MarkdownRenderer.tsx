@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 import type { StyleProp, TextStyle } from 'react-native'
-import { View } from 'react-native'
+import { Platform, View } from 'react-native'
 import type { MarkdownNode } from 'react-native-nitro-markdown'
 import { parseMarkdownWithOptions } from 'react-native-nitro-markdown'
 
@@ -38,6 +38,8 @@ import { SelectableText } from './markdownItem/SelectableText'
 
 const logger = loggerService.withContext('MarkdownRenderer')
 
+const ANDROID_MARKDOWN_MAX_LENGTH = 12000
+
 interface MarkdownRendererProps {
   content: string
   /**
@@ -50,8 +52,10 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ content, enableMarkdown = true }: MarkdownRendererProps) {
+  const shouldRenderMarkdown = enableMarkdown && !(Platform.OS === 'android' && content.length > ANDROID_MARKDOWN_MAX_LENGTH)
+
   const ast = useMemo(() => {
-    if (!enableMarkdown) return null
+    if (!shouldRenderMarkdown) return null
 
     try {
       return parseMarkdownWithOptions(content, { gfm: true, math: true })
@@ -59,9 +63,12 @@ export function MarkdownRenderer({ content, enableMarkdown = true }: MarkdownRen
       logger.warn('Failed to parse markdown; falling back to plain text', error)
       return null
     }
-  }, [content, enableMarkdown])
+  }, [content, shouldRenderMarkdown])
 
   if (!ast) {
+    if (enableMarkdown && Platform.OS === 'android' && content.length > ANDROID_MARKDOWN_MAX_LENGTH) {
+      logger.warn('Markdown disabled for long Android content', { length: content.length })
+    }
     return <PlainTextRenderer content={content} />
   }
 

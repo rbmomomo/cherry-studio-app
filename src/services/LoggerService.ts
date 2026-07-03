@@ -23,6 +23,56 @@ const IS_DEV = __DEV__
 // Default levels: dev shows all, release shows warn+
 const DEFAULT_CONSOLE_LEVEL: LogLevel = IS_DEV ? 'silly' : 'warn'
 const DEFAULT_FILE_LOG_LEVEL = 'warn' // Only log warnings and errors to file
+const MAX_LOG_STRING_LENGTH = 4000
+const MAX_LOG_ARRAY_LENGTH = 20
+const MAX_LOG_OBJECT_KEYS = 50
+
+const sanitizeLogData = (value: any, depth = 0): any => {
+  if (value == null) return value
+
+  if (typeof value === 'string') {
+    return value.length > MAX_LOG_STRING_LENGTH
+      ? `${value.slice(0, MAX_LOG_STRING_LENGTH)}…[truncated ${value.length - MAX_LOG_STRING_LENGTH} chars]`
+      : value
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value === 'function') return '[Function]'
+  if (typeof value === 'symbol') return value.toString()
+
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: sanitizeLogData(value.message, depth + 1),
+      stack: sanitizeLogData(value.stack, depth + 1)
+    }
+  }
+
+  if (depth >= 4) return '[MaxDepth]'
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_LOG_ARRAY_LENGTH).map(item => sanitizeLogData(item, depth + 1))
+    if (value.length > MAX_LOG_ARRAY_LENGTH) {
+      items.push(`[truncated ${value.length - MAX_LOG_ARRAY_LENGTH} items]`)
+    }
+    return items
+  }
+
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {}
+    const entries = Object.entries(value).slice(0, MAX_LOG_OBJECT_KEYS)
+    for (const [key, childValue] of entries) {
+      out[key] = sanitizeLogData(childValue, depth + 1)
+    }
+    const extraKeys = Object.keys(value).length - entries.length
+    if (extraKeys > 0) {
+      out.__truncatedKeys = extraKeys
+    }
+    return out
+  }
+
+  return String(value)
+}
 
 export class LoggerService {
   private static instance: LoggerService
@@ -114,13 +164,14 @@ export class LoggerService {
 
       // Remove the { logToFile: true } object before logging
       const fileLogData = forceLogToFile ? data.slice(0, -1) : data
+      const safeFileLogData = sanitizeLogData(fileLogData)
 
       const logEntry = {
         timestamp: new Date().toISOString(),
         level,
         message,
         ...source,
-        data: fileLogData
+        data: safeFileLogData
       }
 
       // Add formatted log to queue and trigger write
