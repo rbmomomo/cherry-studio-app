@@ -2,14 +2,16 @@ name: Android APK Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'android-v*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag, e.g. android-v0.1.7-fix1'
-        required: true
-        default: 'android-v0.1.7-fix1'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -84,10 +86,15 @@ jobs:
       - name: Prepare APK artifact
         id: artifact
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
             TAG="${{ github.event.inputs.tag }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            TAG="android-main-${SHORT_SHA}"
           fi
+
           APK_NAME="CherryStudio-${TAG}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -99,14 +106,11 @@ jobs:
         with:
           tag_name: ${{ steps.artifact.outputs.tag }}
           name: Cherry Studio ${{ steps.artifact.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           body: |
-            Android APK build with fixes for Android 16 streaming-message crashes.
+            Android APK build generated automatically from `${{ github.ref_name }}`.
 
-            Changes:
-            - Avoid realtime Markdown parsing during streaming output
-            - Fallback to plain text when Markdown parsing fails
-            - Reduce streaming block update frequency
-            - Add global JS error logging and React error boundary
+            Commit: `${{ github.sha }}`
 
             Install the APK from the asset below.
           files: ${{ steps.artifact.outputs.apk_name }}
