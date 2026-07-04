@@ -1,0 +1,285 @@
+import * as DocumentPicker from 'expo-document-picker'
+import { File } from 'expo-file-system'
+
+import type { Assistant, AssistantSettingCustomParameters } from '@/types/assistant'
+import type { GenerationPreset, PresetKind } from '@/types/preset'
+import { storage, uuid } from '@/utils'
+
+import { loggerService } from './LoggerService'
+
+const logger = loggerService.withContext('PresetService')
+const PRESETS_STORAGE_KEY = 'generation_presets_v1'
+
+const numberFrom = (...values: any[]): number | undefined => {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return undefined
+}
+
+const booleanFrom = (...values: any[]): boolean | undefined => {
+  for (const value of values) {
+    if (typeof value === 'boolean') return value
+    if (value === 'true') return true
+    if (value === 'false') return false
+  }
+  return undefined
+}
+
+const stringFrom = (...values: any[]): string | undefined => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return undefined
+}
+
+const detectPresetKind = (raw: Record<string, any>): PresetKind => {
+  if (Array.isArray(raw.prompts) || raw.prompt_order) return 'openai'
+  if ('input_sequence' in raw || 'output_sequence' in raw || 'story_string_prefix' in raw) return 'instruct'
+  if ('temp' in raw || 'top_p' in raw || 'rep_pen' in raw || 'sampler_order' in raw || 'sampler_priority' in raw) {
+    return 'sampling'
+  }
+  return 'unknown'
+}
+
+const getPresetName = (raw: Record<string, any>, fallbackName: string) => {
+  return stringFrom(raw.name, raw.display_name, raw.preset_name, raw.id) || fallbackName.replace(/\.json$/i, '') || 'Preset'
+}
+
+const compileSillyTavernMacros = (content: string): string => {
+  const vars: Record<string, string> = {}
+  let output = content
+
+  output = output.replace(/{{setglobalvar::([^:}]+)::([\s\S]*?)}}/g, (_match, key: string, value: string) => {
+    vars[key.trim()] = value
+    return ''
+  })
+
+  output = output.replace(/{{addglobalvar::([^:}]+)::([\s\S]*?)}}/g, (_match, key: string, value: string) => {
+    const normalizedKey = key.trim()
+    vars[normalizedKey] = `${vars[normalizedKey] || ''}${value}`
+    return ''
+  })
+
+  output = output.replace(/{{getglobalvar::([^}]+)}}/g, (_match, key: string) => vars[key.trim()] || '')
+
+  return output
+}
+
+const getEnabledPromptIdentifiers = (raw: Record<string, any>): string[] | null => {
+  const orderRoot = Array.isArray(raw.prompt_order) ? raw.prompt_order[0] : null
+  const order = Array.isArray(orderRoot?.order) ? orderRoot.order : null
+  if (!order) return null
+
+  return order.filter((item: any) => item?.enabled !== false).map((item: any) => String(item.identifier))
+}
+
+const extractPromptManagerSystemPrompt = (raw: Record<string, any>): string | undefined => {
+  if (!Array.isArray(raw.prompts)) return undefined
+
+  const enabledIdentifiers = getEnabledPromptIdentifiers(raw)
+  const promptMap = new Map(raw.prompts.map((prompt: any) => [String(prompt.identifier), prompt]))
+  const orderedPrompts = enabledIdentifiers
+    ? enabledIdentifiers.map(identifier => promptMap.get(identifier)).filter(Boolean)
+    : raw.prompts.filter((prompt: any) => prompt?.enabled !== false)
+
+  const parts = orderedPrompts
+    .filter((prompt: any) => prompt?.enabled !== false)
+    .filter((prompt: any) => !prompt?.marker)
+    .map((prompt: any) => stringFrom(prompt?.content, prompt?.prompt))
+    .filter((content): content is string => !!content)
+
+  if (!parts.length) return undefined
+  return compileSillyTavernMacros(parts.join('\n\n')).trim()
+}
+
+const extractSystemPrompt = (raw: Record<string, any>): string | undefined => {
+  const direct = stringFrom(raw.system_prompt, raw.systemPrompt, raw.system, raw.prompt)
+  if (direct) return compileSillyTavernMacros(direct).trim()
+
+  const promptManagerPrompt = extractPromptManagerSystemPrompt(raw)
+  if (promptManagerPrompt) return promptManagerPrompt
+
+  if (Array.isArray(raw.prompts)) {
+    const systemPrompt = raw.prompts.find((prompt: any) => {
+      const identifier = String(prompt?.identifier ?? prompt?.id ?? prompt?.name ?? '').toLowerCase()
+      const role = String(prompt?.role ?? '').toLowerCase()
+      return role === 'system' || identifier.includes('system') || identifier.includes('main')
+    })
+    const content = stringFrom(systemPrompt?.content, systemPrompt?.prompt)
+    return content ? compileSillyTavernMacros(content).trim() : undefined
+  }
+
+  const prefix = stringFrom(raw.story_string_prefix)
+  const suffix = stringFrom(raw.story_string_suffix)
+  const alignment = stringFrom(raw.user_alignment_message)
+  const instructParts = [prefix, alignment, suffix].filter(Boolean)
+  return instructParts.length ? compileSillyTavernMacros(instructParts.join('\n')).trim() : undefined
+}
+
+const extractStopSequences = (raw: Record<string, any>): string[] | undefined => {
+  const stopValues = [raw.stop_sequence, raw.stop, raw.stop_sequences, raw.stopStrings, raw.custom_stopping_strings]
+  const stops = stopValues.flatMap(value => {
+    if (!value) return []
+    if (Array.isArray(value)) return value
+    if (typeof value === 'string') {
+      if (!value.trim()) return []
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+      return [value]
+    }
+    return []
+  })
+  const normalized = [...new Set(stops.filter((item): item is string => typeof item === 'string' && item.length > 0))]
+  return normalized.length ? normalized : undefined
+}
+
+const extractCustomParameters = (raw: Record<string, any>): Record<string, any> => {
+  const mapping: Record<string, any> = {
+    top_k: raw.top_k,
+    min_p: raw.min_p,
+    top_a: raw.top_a,
+    typical_p: raw.typical_p ?? raw.typical,
+    repetition_penalty: raw.rep_pen ?? raw.repetition_penalty,
+    frequency_penalty: raw.freq_pen ?? raw.frequency_penalty,
+    presence_penalty: raw.presence_pen ?? raw.presence_penalty,
+    reasoning_effort: raw.reasoning_effort,
+    verbosity: raw.verbosity,
+    squash_system_messages: raw.squash_system_messages,
+    mirostat: raw.mirostat ?? raw.mirostat_mode,
+    mirostat_tau: raw.mirostat_tau,
+    mirostat_eta: raw.mirostat_eta,
+    seed: raw.seed,
+    grammar: raw.grammar ?? raw.grammar_string,
+    negative_prompt: raw.negative_prompt,
+    stop: extractStopSequences(raw)
+  }
+
+  return Object.fromEntries(Object.entries(mapping).filter(([, value]) => value !== undefined && value !== ''))
+}
+
+export const parseSillyTavernPreset = (raw: Record<string, any>, fallbackName = 'Preset'): GenerationPreset => {
+  const now = Date.now()
+  const kind = detectPresetKind(raw)
+  const maxTokens = numberFrom(raw.openai_max_tokens, raw.max_tokens, raw.maxTokens, raw.amount_gen, raw.genamt)
+  const systemPrompt = extractSystemPrompt(raw)
+
+  return {
+    id: uuid(),
+    name: getPresetName(raw, fallbackName),
+    kind,
+    source: 'sillytavern',
+    createdAt: now,
+    updatedAt: now,
+    raw,
+    settings: {
+      temperature: numberFrom(raw.temperature, raw.temp),
+      topP: numberFrom(raw.top_p, raw.topP),
+      maxTokens: maxTokens && maxTokens > 0 ? maxTokens : undefined,
+      streamOutput: booleanFrom(raw.stream_openai, raw.streaming, raw.stream),
+      systemPrompt,
+      stopSequences: extractStopSequences(raw),
+      customParameters: extractCustomParameters(raw)
+    }
+  }
+}
+
+const customParametersToAssistantSettings = (customParameters?: Record<string, any>): AssistantSettingCustomParameters[] => {
+  if (!customParameters) return []
+  return Object.entries(customParameters).map(([name, value]) => {
+    const type = typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : typeof value === 'string' ? 'string' : 'json'
+    return {
+      name,
+      value: type === 'json' ? JSON.stringify(value) : value,
+      type
+    } as AssistantSettingCustomParameters
+  })
+}
+
+class PresetService {
+  getPresets(): GenerationPreset[] {
+    const raw = storage.getString(PRESETS_STORAGE_KEY)
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      logger.error('Failed to parse presets storage', error as Error)
+      return []
+    }
+  }
+
+  savePresets(presets: GenerationPreset[]) {
+    storage.set(PRESETS_STORAGE_KEY, JSON.stringify(presets))
+  }
+
+  getPreset(id?: string): GenerationPreset | undefined {
+    if (!id) return undefined
+    return this.getPresets().find(preset => preset.id === id)
+  }
+
+  upsertPreset(preset: GenerationPreset) {
+    const presets = this.getPresets()
+    const index = presets.findIndex(item => item.id === preset.id)
+    const updatedPreset = { ...preset, updatedAt: Date.now() }
+    if (index >= 0) {
+      presets[index] = updatedPreset
+    } else {
+      presets.unshift(updatedPreset)
+    }
+    this.savePresets(presets)
+    return updatedPreset
+  }
+
+  deletePreset(id: string) {
+    this.savePresets(this.getPresets().filter(preset => preset.id !== id))
+  }
+
+  async importSillyTavernPresetFromFile(): Promise<GenerationPreset | null> {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/json',
+      copyToCacheDirectory: true,
+      multiple: false
+    })
+
+    if (result.canceled || !result.assets?.[0]) return null
+
+    const asset = result.assets[0]
+    const content = await new File(asset.uri).text()
+    const raw = JSON.parse(content)
+    const preset = parseSillyTavernPreset(raw, asset.name || 'Preset')
+    return this.upsertPreset(preset)
+  }
+
+  applyPresetToAssistant(assistant: Assistant, preset?: GenerationPreset): Assistant {
+    if (!preset) return assistant
+
+    const nextSettings = {
+      ...assistant.settings,
+      presetId: preset.id,
+      ...(preset.settings.temperature !== undefined
+        ? { temperature: preset.settings.temperature, enableTemperature: true }
+        : undefined),
+      ...(preset.settings.topP !== undefined ? { topP: preset.settings.topP, enableTopP: true } : undefined),
+      ...(preset.settings.maxTokens !== undefined
+        ? { maxTokens: preset.settings.maxTokens, enableMaxTokens: true }
+        : undefined),
+      ...(preset.settings.streamOutput !== undefined ? { streamOutput: preset.settings.streamOutput } : undefined),
+      customParameters: customParametersToAssistantSettings(preset.settings.customParameters)
+    }
+
+    return {
+      ...assistant,
+      prompt: preset.settings.systemPrompt ?? assistant.prompt,
+      settings: nextSettings
+    }
+  }
+}
+
+export const presetService = new PresetService()
