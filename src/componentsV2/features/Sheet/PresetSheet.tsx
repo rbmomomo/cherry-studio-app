@@ -1,9 +1,11 @@
 import { TrueSheet } from '@lodev09/react-native-true-sheet'
-import React, { useEffect, useMemo, useState } from 'react'
+import { Switch } from 'heroui-native'
+import React, { useEffect, useState } from 'react'
 
 import type { SelectionSheetItem } from '@/componentsV2/base/SelectionSheet'
 import SelectionSheet from '@/componentsV2/base/SelectionSheet'
 import Text from '@/componentsV2/base/Text'
+import XStack from '@/componentsV2/layout/XStack'
 import YStack from '@/componentsV2/layout/YStack'
 import { presetService } from '@/services/PresetService'
 import type { Assistant } from '@/types/assistant'
@@ -69,66 +71,88 @@ export const PresetSheet: React.FC = () => {
     await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
   }
 
-  const items: SelectionSheetItem[] = useMemo(() => {
-    const result: SelectionSheetItem[] = [
-      {
-        id: 'import',
-        label: '导入酒馆预设 JSON',
-        description: '支持 SillyTavern sampler / instruct / OpenAI 预设',
-        onSelect: importPreset,
-        shouldDismiss: false
-      },
-      {
-        id: 'none',
-        label: '不使用预设',
-        description: '保留当前助手参数',
-        isSelected: !currentPresetId,
-        onSelect: async () => {
-          if (!sheetData.assistant || !sheetData.updateAssistant) return
-          await applyAssistantUpdate({
-            ...sheetData.assistant,
-            settings: { ...sheetData.assistant.settings, presetId: undefined }
-          })
-        }
-      },
-      ...presets.map(preset => ({
-        id: preset.id,
-        label: preset.name,
-        description: getPresetDescription(preset),
-        isSelected: preset.id === currentPresetId,
-        shouldDismiss: false,
-        onSelect: async () => {
-          if (!sheetData.assistant || !sheetData.updateAssistant) return
-          await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
-        }
-      })),
-      ...(currentPreset?.entries?.length
-        ? [
-            {
-              id: 'entries-title',
-              label: '当前预设条目开关',
-              description: '点击条目即可启用/禁用，灰色表示没有实际文本内容',
-              shouldDismiss: false,
-              onSelect: () => {}
-            },
-            ...currentPreset.entries.map(entry => ({
+  const enabledEntryCount = currentPreset?.entries?.filter(entry => entry.enabled).length ?? 0
+  const totalEntryCount = currentPreset?.entries?.length ?? 0
+
+  const createEntryToggleHandler = (identifier: string) => async () => {
+    if (!currentPresetId) return
+    const updatedPreset = presetService.togglePresetEntry(currentPresetId, identifier)
+    refresh()
+    await reapplyPresetIfNeeded(updatedPreset)
+  }
+
+  const items: SelectionSheetItem[] = [
+    {
+      id: 'import',
+      label: '导入酒馆预设 JSON',
+      description: '支持 SillyTavern sampler / instruct / OpenAI 预设',
+      onSelect: importPreset,
+      shouldDismiss: false
+    },
+    {
+      id: 'none',
+      label: '不使用预设',
+      description: '保留当前助手参数',
+      isSelected: !currentPresetId,
+      onSelect: async () => {
+        if (!sheetData.assistant || !sheetData.updateAssistant) return
+        await applyAssistantUpdate({
+          ...sheetData.assistant,
+          settings: { ...sheetData.assistant.settings, presetId: undefined }
+        })
+      }
+    },
+    ...presets.map(preset => ({
+      id: preset.id,
+      label: preset.name,
+      description: getPresetDescription(preset),
+      isSelected: preset.id === currentPresetId,
+      shouldDismiss: false,
+      onSelect: async () => {
+        if (!sheetData.assistant || !sheetData.updateAssistant) return
+        await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
+      }
+    })),
+    ...(currentPreset?.entries?.length
+      ? [
+          {
+            id: 'entries-title',
+            label: '当前预设条目开关',
+            description: `已启用 ${enabledEntryCount}/${totalEntryCount} 条。点击条目或右侧开关即可启用/禁用`,
+            shouldDismiss: false,
+            onSelect: () => {}
+          },
+          ...currentPreset.entries.map(entry => {
+            const handleToggle = createEntryToggleHandler(entry.identifier)
+
+            return {
               id: `entry-${entry.identifier}`,
-              label: `${entry.enabled ? '🟠' : '⚪'} ${entry.name}`,
+              label: (
+                <XStack className="min-w-0 flex-1 items-center gap-2">
+                  <Text className="text-base">{entry.enabled ? '🟠' : '⚪'}</Text>
+                  <Text
+                    className={`min-w-0 flex-1 text-base ${entry.enabled ? 'text-foreground' : 'text-foreground-secondary opacity-60'} ${!entry.hasContent ? 'opacity-45' : ''}`}
+                    numberOfLines={1}
+                    ellipsizeMode="tail">
+                    {entry.name}
+                  </Text>
+                </XStack>
+              ),
               description: `${entry.role || 'prompt'}${entry.marker ? ' · 占位' : ''}${entry.hasContent ? '' : ' · 空内容'}`,
-              color: !entry.hasContent ? 'opacity-45' : undefined,
               shouldDismiss: false,
-              onSelect: async () => {
-                if (!currentPresetId) return
-                const updatedPreset = presetService.togglePresetEntry(currentPresetId, entry.identifier)
-                refresh()
-                await reapplyPresetIfNeeded(updatedPreset)
-              }
-            }))
-          ]
-        : [])
-    ]
-    return result
-  }, [currentPresetId, presets, sheetData.assistant, sheetData.updateAssistant])
+              onSelect: handleToggle,
+              icon: (
+                <Switch
+                  isSelected={entry.enabled}
+                  onSelectedChange={handleToggle}
+                  isDisabled={!entry.hasContent && !entry.enabled}
+                />
+              )
+            }
+          })
+        ]
+      : [])
+  ]
 
   return (
     <SelectionSheet

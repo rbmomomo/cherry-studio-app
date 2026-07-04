@@ -47,7 +47,9 @@ const detectPresetKind = (raw: Record<string, any>): PresetKind => {
 }
 
 const getPresetName = (raw: Record<string, any>, fallbackName: string) => {
-  return stringFrom(raw.name, raw.display_name, raw.preset_name, raw.id) || fallbackName.replace(/\.json$/i, '') || 'Preset'
+  return (
+    stringFrom(raw.name, raw.display_name, raw.preset_name, raw.id) || fallbackName.replace(/\.json$/i, '') || 'Preset'
+  )
 }
 
 const compileSillyTavernMacros = (content: string): string => {
@@ -88,18 +90,29 @@ const extractPresetEntries = (raw: Record<string, any>): PresetEntry[] | undefin
 
   const promptMap = new Map(raw.prompts.map((prompt: any) => [String(prompt.identifier), prompt]))
   const order = getPromptOrder(raw)
-  const orderedPrompts = order
-    ? order.map((item: any) => promptMap.get(String(item.identifier))).filter(Boolean)
-    : raw.prompts
 
-  return orderedPrompts.map((prompt: any) => ({
-    identifier: String(prompt.identifier),
-    name: stringFrom(prompt.name, prompt.identifier) || '未命名条目',
-    role: stringFrom(prompt.role),
-    enabled: prompt.enabled !== false,
-    marker: !!prompt.marker,
-    hasContent: !!stringFrom(prompt.content, prompt.prompt)
-  }))
+  const orderedItems = order
+    ? order
+        .map((item: any) => {
+          const prompt = promptMap.get(String(item.identifier))
+          return prompt ? { prompt, orderItem: item } : null
+        })
+        .filter(Boolean)
+    : raw.prompts.map((prompt: any) => ({ prompt, orderItem: undefined }))
+
+  return orderedItems.map((item: any) => {
+    const prompt = item.prompt
+    const orderItem = item.orderItem
+
+    return {
+      identifier: String(prompt.identifier),
+      name: stringFrom(prompt.name, prompt.identifier) || '未命名条目',
+      role: stringFrom(prompt.role),
+      enabled: orderItem?.enabled ?? prompt.enabled !== false,
+      marker: !!(orderItem?.marker ?? prompt.marker),
+      hasContent: !!stringFrom(prompt.content, prompt.prompt)
+    }
+  })
 }
 
 const extractPromptManagerSystemPrompt = (raw: Record<string, any>): string | undefined => {
@@ -216,10 +229,19 @@ export const parseSillyTavernPreset = (raw: Record<string, any>, fallbackName = 
   }
 }
 
-const customParametersToAssistantSettings = (customParameters?: Record<string, any>): AssistantSettingCustomParameters[] => {
+const customParametersToAssistantSettings = (
+  customParameters?: Record<string, any>
+): AssistantSettingCustomParameters[] => {
   if (!customParameters) return []
   return Object.entries(customParameters).map(([name, value]) => {
-    const type = typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : typeof value === 'string' ? 'string' : 'json'
+    const type =
+      typeof value === 'boolean'
+        ? 'boolean'
+        : typeof value === 'number'
+          ? 'number'
+          : typeof value === 'string'
+            ? 'string'
+            : 'json'
     return {
       name,
       value: type === 'json' ? JSON.stringify(value) : value,
