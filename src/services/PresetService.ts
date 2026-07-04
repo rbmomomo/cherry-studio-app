@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 
 import type { Assistant, AssistantSettingCustomParameters } from '@/types/assistant'
-import type { GenerationPreset, PresetKind } from '@/types/preset'
+import type { GenerationPreset, PresetEntry, PresetKind } from '@/types/preset'
 import { storage, uuid } from '@/utils'
 
 import { loggerService } from './LoggerService'
@@ -70,12 +70,36 @@ const compileSillyTavernMacros = (content: string): string => {
   return output
 }
 
-const getEnabledPromptIdentifiers = (raw: Record<string, any>): string[] | null => {
+const getPromptOrder = (raw: Record<string, any>): any[] | null => {
   const orderRoot = Array.isArray(raw.prompt_order) ? raw.prompt_order[0] : null
   const order = Array.isArray(orderRoot?.order) ? orderRoot.order : null
+  return order || null
+}
+
+const getEnabledPromptIdentifiers = (raw: Record<string, any>): string[] | null => {
+  const order = getPromptOrder(raw)
   if (!order) return null
 
   return order.filter((item: any) => item?.enabled !== false).map((item: any) => String(item.identifier))
+}
+
+const extractPresetEntries = (raw: Record<string, any>): PresetEntry[] | undefined => {
+  if (!Array.isArray(raw.prompts)) return undefined
+
+  const promptMap = new Map(raw.prompts.map((prompt: any) => [String(prompt.identifier), prompt]))
+  const order = getPromptOrder(raw)
+  const orderedPrompts = order
+    ? order.map((item: any) => promptMap.get(String(item.identifier))).filter(Boolean)
+    : raw.prompts
+
+  return orderedPrompts.map((prompt: any) => ({
+    identifier: String(prompt.identifier),
+    name: stringFrom(prompt.name, prompt.identifier) || '未命名条目',
+    role: stringFrom(prompt.role),
+    enabled: prompt.enabled !== false,
+    marker: !!prompt.marker,
+    hasContent: !!stringFrom(prompt.content, prompt.prompt)
+  }))
 }
 
 const extractPromptManagerSystemPrompt = (raw: Record<string, any>): string | undefined => {
@@ -169,6 +193,7 @@ export const parseSillyTavernPreset = (raw: Record<string, any>, fallbackName = 
   const kind = detectPresetKind(raw)
   const maxTokens = numberFrom(raw.openai_max_tokens, raw.max_tokens, raw.maxTokens, raw.amount_gen, raw.genamt)
   const systemPrompt = extractSystemPrompt(raw)
+  const entries = extractPresetEntries(raw)
 
   return {
     id: uuid(),
@@ -178,6 +203,7 @@ export const parseSillyTavernPreset = (raw: Record<string, any>, fallbackName = 
     createdAt: now,
     updatedAt: now,
     raw,
+    entries,
     settings: {
       temperature: numberFrom(raw.temperature, raw.temp),
       topP: numberFrom(raw.top_p, raw.topP),
@@ -239,6 +265,49 @@ class PresetService {
 
   deletePreset(id: string) {
     this.savePresets(this.getPresets().filter(preset => preset.id !== id))
+  }
+
+  togglePresetEntry(presetId: string, identifier: string): GenerationPreset | undefined {
+    const preset = this.getPreset(presetId)
+    if (!preset?.entries) return preset
+
+    const entries = preset.entries.map(entry =>
+      entry.identifier === identifier ? { ...entry, enabled: !entry.enabled } : entry
+    )
+    const raw = { ...preset.raw }
+
+    if (Array.isArray(raw.prompts)) {
+      raw.prompts = raw.prompts.map((prompt: any) => {
+        if (String(prompt.identifier) !== identifier) return prompt
+        const entry = entries.find(candidate => candidate.identifier === identifier)
+        return { ...prompt, enabled: entry?.enabled ?? prompt.enabled }
+      })
+    }
+
+    if (Array.isArray(raw.prompt_order)) {
+      raw.prompt_order = raw.prompt_order.map((orderRoot: any) => ({
+        ...orderRoot,
+        order: Array.isArray(orderRoot.order)
+          ? orderRoot.order.map((item: any) => {
+              if (String(item.identifier) !== identifier) return item
+              const entry = entries.find(candidate => candidate.identifier === identifier)
+              return { ...item, enabled: entry?.enabled ?? item.enabled }
+            })
+          : orderRoot.order
+      }))
+    }
+
+    const nextPreset: GenerationPreset = {
+      ...preset,
+      raw,
+      entries,
+      settings: {
+        ...preset.settings,
+        systemPrompt: extractSystemPrompt(raw)
+      }
+    }
+
+    return this.upsertPreset(nextPreset)
   }
 
   async importSillyTavernPresetFromFile(): Promise<GenerationPreset | null> {

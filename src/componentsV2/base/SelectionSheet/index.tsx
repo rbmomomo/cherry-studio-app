@@ -74,7 +74,8 @@ const SelectionSheet: React.FC<SelectionSheetProps> = ({
   }, [name, isVisible])
 
   const handleSelect = (item: SelectionSheetItem) => {
-    if (shouldDismiss) {
+    const shouldDismissItem = item.shouldDismiss ?? shouldDismiss
+    if (shouldDismissItem) {
       TrueSheet.dismiss(name)
     }
 

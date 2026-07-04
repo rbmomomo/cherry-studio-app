@@ -52,12 +52,22 @@ export const PresetSheet: React.FC = () => {
     const preset = await presetService.importSillyTavernPresetFromFile()
     refresh()
     if (preset && sheetData.assistant && sheetData.updateAssistant) {
-      await sheetData.updateAssistant(presetService.applyPresetToAssistant(sheetData.assistant, preset))
-      dismissPresetSheet()
+      await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
     }
   }
 
   const currentPresetId = sheetData.assistant?.settings?.presetId
+  const currentPreset = presets.find(preset => preset.id === currentPresetId)
+
+  const applyAssistantUpdate = async (assistant: Assistant) => {
+    setSheetData(prev => ({ ...prev, assistant }))
+    await sheetData.updateAssistant?.(assistant)
+  }
+
+  const reapplyPresetIfNeeded = async (preset?: GenerationPreset) => {
+    if (!preset || !sheetData.assistant || !sheetData.updateAssistant || preset.id !== currentPresetId) return
+    await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
+  }
 
   const items: SelectionSheetItem[] = useMemo(() => {
     const result: SelectionSheetItem[] = [
@@ -75,7 +85,7 @@ export const PresetSheet: React.FC = () => {
         isSelected: !currentPresetId,
         onSelect: async () => {
           if (!sheetData.assistant || !sheetData.updateAssistant) return
-          await sheetData.updateAssistant({
+          await applyAssistantUpdate({
             ...sheetData.assistant,
             settings: { ...sheetData.assistant.settings, presetId: undefined }
           })
@@ -86,11 +96,36 @@ export const PresetSheet: React.FC = () => {
         label: preset.name,
         description: getPresetDescription(preset),
         isSelected: preset.id === currentPresetId,
+        shouldDismiss: false,
         onSelect: async () => {
           if (!sheetData.assistant || !sheetData.updateAssistant) return
-          await sheetData.updateAssistant(presetService.applyPresetToAssistant(sheetData.assistant, preset))
+          await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
         }
-      }))
+      })),
+      ...(currentPreset?.entries?.length
+        ? [
+            {
+              id: 'entries-title',
+              label: '当前预设条目开关',
+              description: '点击条目即可启用/禁用，灰色表示没有实际文本内容',
+              shouldDismiss: false,
+              onSelect: () => {}
+            },
+            ...currentPreset.entries.map(entry => ({
+              id: `entry-${entry.identifier}`,
+              label: `${entry.enabled ? '🟠' : '⚪'} ${entry.name}`,
+              description: `${entry.role || 'prompt'}${entry.marker ? ' · 占位' : ''}${entry.hasContent ? '' : ' · 空内容'}`,
+              color: !entry.hasContent ? 'opacity-45' : undefined,
+              shouldDismiss: false,
+              onSelect: async () => {
+                if (!currentPresetId) return
+                const updatedPreset = presetService.togglePresetEntry(currentPresetId, entry.identifier)
+                refresh()
+                await reapplyPresetIfNeeded(updatedPreset)
+              }
+            }))
+          ]
+        : [])
     ]
     return result
   }, [currentPresetId, presets, sheetData.assistant, sheetData.updateAssistant])
