@@ -4,9 +4,11 @@ import React, { useEffect, useState } from 'react'
 
 import type { SelectionSheetItem } from '@/componentsV2/base/SelectionSheet'
 import SelectionSheet from '@/componentsV2/base/SelectionSheet'
+import { presentDialog } from '@/componentsV2/base/Dialog/useDialogManager'
 import Text from '@/componentsV2/base/Text'
 import XStack from '@/componentsV2/layout/XStack'
 import YStack from '@/componentsV2/layout/YStack'
+import { presentPromptDetailSheet } from '@/componentsV2/features/Sheet/PromptDetailSheet'
 import { presetService } from '@/services/PresetService'
 import type { Assistant } from '@/types/assistant'
 import type { GenerationPreset } from '@/types/preset'
@@ -81,6 +83,48 @@ export const PresetSheet: React.FC = () => {
     await reapplyPresetIfNeeded(updatedPreset)
   }
 
+  const createEntryEditHandler = (identifier: string, name: string) => () => {
+    if (!currentPresetId) return
+
+    let draft = presetService.getPresetEntryContent(currentPresetId, identifier)
+    presentPromptDetailSheet(
+      draft,
+      text => {
+        draft = text
+      },
+      `编辑条目：${name}`,
+      async text => {
+        if (!currentPresetId || text === presetService.getPresetEntryContent(currentPresetId, identifier)) return
+        const updatedPreset = presetService.updatePresetEntryContent(currentPresetId, identifier, text)
+        refresh()
+        await reapplyPresetIfNeeded(updatedPreset)
+      }
+    )
+  }
+
+  const confirmDeleteCurrentPreset = () => {
+    if (!currentPreset) return
+
+    presentDialog('warning', {
+      title: '删除预设',
+      content: `确定删除预设「${currentPreset.name}」吗？此操作不会删除当前助手已写入的提示词，但会移除预设记录。`,
+      confirmText: '删除',
+      showCancel: true,
+      onConfirm: async () => {
+        const deletingCurrentPresetId = currentPreset.id
+        presetService.deletePreset(deletingCurrentPresetId)
+        refresh()
+
+        if (sheetData.assistant?.settings?.presetId === deletingCurrentPresetId) {
+          await applyAssistantUpdate({
+            ...sheetData.assistant,
+            settings: { ...sheetData.assistant.settings, presetId: undefined }
+          })
+        }
+      }
+    })
+  }
+
   const items: SelectionSheetItem[] = [
     {
       id: 'import',
@@ -113,6 +157,18 @@ export const PresetSheet: React.FC = () => {
         await applyAssistantUpdate(presetService.applyPresetToAssistant(sheetData.assistant, preset))
       }
     })),
+    ...(currentPreset
+      ? [
+          {
+            id: 'delete-current-preset',
+            label: '删除当前预设',
+            description: `删除「${currentPreset.name}」的预设记录`,
+            color: 'text-red-400',
+            shouldDismiss: false,
+            onSelect: confirmDeleteCurrentPreset
+          }
+        ]
+      : []),
     ...(currentPreset?.entries?.length
       ? [
           {
@@ -124,6 +180,7 @@ export const PresetSheet: React.FC = () => {
           },
           ...currentPreset.entries.map(entry => {
             const handleToggle = createEntryToggleHandler(entry.identifier)
+            const handleEdit = createEntryEditHandler(entry.identifier, entry.name)
 
             return {
               id: `entry-${entry.identifier}`,
@@ -140,7 +197,7 @@ export const PresetSheet: React.FC = () => {
               ),
               description: `${entry.role || 'prompt'}${entry.marker ? ' · 占位' : ''}${entry.hasContent ? '' : ' · 空内容'}`,
               shouldDismiss: false,
-              onSelect: handleToggle,
+              onSelect: handleEdit,
               icon: (
                 <Switch
                   isSelected={entry.enabled}

@@ -289,6 +289,39 @@ class PresetService {
     this.savePresets(this.getPresets().filter(preset => preset.id !== id))
   }
 
+  getPresetEntryContent(presetId: string, identifier: string): string {
+    const preset = this.getPreset(presetId)
+    if (!preset || !Array.isArray(preset.raw.prompts)) return ''
+
+    const prompt = preset.raw.prompts.find((item: any) => String(item.identifier) === identifier)
+    return stringFrom(prompt?.content, prompt?.prompt) || ''
+  }
+
+  updatePresetEntryContent(presetId: string, identifier: string, content: string): GenerationPreset | undefined {
+    const preset = this.getPreset(presetId)
+    if (!preset || !Array.isArray(preset.raw.prompts)) return preset
+
+    const raw = {
+      ...preset.raw,
+      prompts: preset.raw.prompts.map((prompt: any) => {
+        if (String(prompt.identifier) !== identifier) return prompt
+        return { ...prompt, content }
+      })
+    }
+
+    const nextPreset: GenerationPreset = {
+      ...preset,
+      raw,
+      entries: extractPresetEntries(raw),
+      settings: {
+        ...preset.settings,
+        systemPrompt: extractSystemPrompt(raw)
+      }
+    }
+
+    return this.upsertPreset(nextPreset)
+  }
+
   togglePresetEntry(presetId: string, identifier: string): GenerationPreset | undefined {
     const preset = this.getPreset(presetId)
     if (!preset?.entries) return preset
