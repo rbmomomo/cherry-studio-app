@@ -125,6 +125,18 @@ export const PresetSheet: React.FC = () => {
     })
   }
 
+  const exportCurrentPreset = async () => {
+    if (!currentPreset) return
+
+    const result = await presetService.exportPresetToFile(currentPreset.id)
+    if (!result.success && result.message !== 'cancelled') {
+      presentDialog('error', {
+        title: '导出失败',
+        content: result.message || '无法导出当前预设。'
+      })
+    }
+  }
+
   const items: SelectionSheetItem[] = [
     {
       id: 'import',
@@ -159,6 +171,13 @@ export const PresetSheet: React.FC = () => {
     })),
     ...(currentPreset
       ? [
+          {
+            id: 'export-current-preset',
+            label: '导出当前预设',
+            description: `导出「${currentPreset.name}」为 SillyTavern 兼容 JSON`,
+            shouldDismiss: false,
+            onSelect: exportCurrentPreset
+          },
           {
             id: 'delete-current-preset',
             label: '删除当前预设',

@@ -1,9 +1,12 @@
 import * as DocumentPicker from 'expo-document-picker'
-import { File } from 'expo-file-system'
+import { File, Paths } from 'expo-file-system'
+import * as FileSystem from 'expo-file-system/legacy'
 
 import type { Assistant, AssistantSettingCustomParameters } from '@/types/assistant'
 import type { GenerationPreset, PresetEntry, PresetKind } from '@/types/preset'
+import { saveFileToFolder } from '@/services/FileService'
 import { storage, uuid } from '@/utils'
+import { removeSpecialCharactersForFileName } from '@/utils/file'
 
 import { loggerService } from './LoggerService'
 
@@ -393,6 +396,24 @@ class PresetService {
     const raw = JSON.parse(content)
     const preset = parseSillyTavernPreset(raw, asset.name || 'Preset')
     return this.upsertPreset(preset)
+  }
+
+  async exportPresetToFile(presetId: string) {
+    const preset = this.getPreset(presetId)
+    if (!preset) return { success: false, message: 'Preset not found.' }
+
+    const fileName = `${removeSpecialCharactersForFileName(preset.name) || 'preset'}.json`
+    const tempUri = `${Paths.cache.uri}${fileName}`
+
+    await FileSystem.writeAsStringAsync(tempUri, JSON.stringify(preset.raw, null, 2), {
+      encoding: FileSystem.EncodingType.UTF8
+    })
+
+    try {
+      return await saveFileToFolder(tempUri, fileName, 'application/json')
+    } finally {
+      await FileSystem.deleteAsync(tempUri, { idempotent: true })
+    }
   }
 
   applyPresetToAssistant(assistant: Assistant, preset?: GenerationPreset): Assistant {
