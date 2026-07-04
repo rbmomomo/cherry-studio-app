@@ -54,22 +54,36 @@ const getPresetName = (raw: Record<string, any>, fallbackName: string) => {
 
 const compileSillyTavernMacros = (content: string): string => {
   const vars: Record<string, string> = {}
-  let output = content
 
-  output = output.replace(/{{setglobalvar::([^:}]+)::([\s\S]*?)}}/g, (_match, key: string, value: string) => {
-    vars[key.trim()] = value
-    return ''
-  })
+  return content.replace(
+    /{{(\/\/[\s\S]*?|setglobalvar::([^:}]+)::([\s\S]*?)|addglobalvar::([^:}]+)::([\s\S]*?)|getglobalvar::([^}]+))}}/g,
+    (
+      _match,
+      _body: string,
+      setKey?: string,
+      setValue?: string,
+      addKey?: string,
+      addValue?: string,
+      getKey?: string
+    ) => {
+      if (setKey !== undefined) {
+        vars[setKey.trim()] = setValue || ''
+        return ''
+      }
 
-  output = output.replace(/{{addglobalvar::([^:}]+)::([\s\S]*?)}}/g, (_match, key: string, value: string) => {
-    const normalizedKey = key.trim()
-    vars[normalizedKey] = `${vars[normalizedKey] || ''}${value}`
-    return ''
-  })
+      if (addKey !== undefined) {
+        const normalizedKey = addKey.trim()
+        vars[normalizedKey] = `${vars[normalizedKey] || ''}${addValue || ''}`
+        return ''
+      }
 
-  output = output.replace(/{{getglobalvar::([^}]+)}}/g, (_match, key: string) => vars[key.trim()] || '')
+      if (getKey !== undefined) {
+        return vars[getKey.trim()] || ''
+      }
 
-  return output
+      return ''
+    }
+  )
 }
 
 const getPromptOrder = (raw: Record<string, any>): any[] | null => {

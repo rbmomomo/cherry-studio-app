@@ -52,7 +52,8 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ content, enableMarkdown = true }: MarkdownRendererProps) {
-  const shouldRenderMarkdown = enableMarkdown && !(Platform.OS === 'android' && content.length > ANDROID_MARKDOWN_MAX_LENGTH)
+  const shouldRenderMarkdown =
+    enableMarkdown && !(Platform.OS === 'android' && content.length > ANDROID_MARKDOWN_MAX_LENGTH)
 
   const ast = useMemo(() => {
     if (!shouldRenderMarkdown) return null
@@ -76,7 +77,7 @@ export function MarkdownRenderer({ content, enableMarkdown = true }: MarkdownRen
 }
 
 function PlainTextRenderer({ content }: { content: string }) {
-  return <SelectableText className="text-foreground text-base my-2">{content}</SelectableText>
+  return <SelectableText className="text-foreground my-2 text-base">{content}</SelectableText>
 }
 
 interface NodeRendererProps {
@@ -396,7 +397,13 @@ function NodeRenderer({ node, textClassName, textStyle }: NodeRendererProps) {
 
     case 'html_block':
     case 'html_inline':
-      return null
+      return (
+        <MarkdownText
+          content={getTextContent(node) || node.content || ''}
+          className={textClassName}
+          style={textStyle}
+        />
+      )
 
     default:
       if (node.children) {
