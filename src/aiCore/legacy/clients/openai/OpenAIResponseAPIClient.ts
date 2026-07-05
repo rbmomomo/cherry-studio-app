@@ -36,6 +36,7 @@ import type {
 import type { MCPTool } from '@/types/tool'
 import { WebSearchSource } from '@/types/websearch'
 import { addImageFileToContents } from '@/utils/formats'
+import { replacePromptVariables } from '@/utils/promptVariables'
 import {
   isSupportedToolUse,
   mcpToolCallResponseToOpenAIMessage,
@@ -393,7 +394,7 @@ export class OpenAIResponseAPIClient extends OpenAIBaseClient<
 
         const systemMessageContent: OpenAI.Responses.ResponseInputMessageContentList = []
         const systemMessageInput: OpenAI.Responses.ResponseInputText = {
-          text: assistant.prompt || '',
+          text: replacePromptVariables(assistant.prompt || '', assistant, model),
           type: 'input_text'
         }
 

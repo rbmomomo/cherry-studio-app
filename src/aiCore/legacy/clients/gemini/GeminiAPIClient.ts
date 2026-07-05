@@ -27,6 +27,7 @@ import { loggerService } from '@/services/LoggerService'
 import { estimateTextTokens } from '@/services/TokenService'
 import type { Assistant, Model } from '@/types/assistant'
 import { EFFORT_RATIO } from '@/types/assistant'
+import { replacePromptVariables } from '@/utils/promptVariables'
 import type { LLMWebSearchCompleteChunk, TextStartChunk, ThinkingStartChunk } from '@/types/chunk'
 import { ChunkType } from '@/types/chunk'
 import type { FileMetadata } from '@/types/file'
@@ -435,7 +436,7 @@ export class GeminiAPIClient extends BaseApiClient<
       }> => {
         const { messages, mcpTools, maxTokens, enableWebSearch, enableUrlContext, enableGenerateImage } = coreRequest
         // 1. 处理系统消息
-        const systemInstruction = assistant.prompt
+        const systemInstruction = replacePromptVariables(assistant.prompt || '', assistant, model)
 
         // 2. 设置工具
         const { tools } = this.setupToolsConfig({

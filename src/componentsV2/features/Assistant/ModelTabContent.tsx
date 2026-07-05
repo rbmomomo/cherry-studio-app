@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { presentDialog } from '@/componentsV2/base/Dialog/useDialogManager'
 import Text from '@/componentsV2/base/Text'
 import TextField from '@/componentsV2/base/TextField'
-import { presentPresetSheet } from '@/componentsV2/features/Sheet/PresetSheet'
 import { presentReasoningSheet } from '@/componentsV2/features/Sheet/ReasoningSheet'
 import { ChevronRight } from '@/componentsV2/icons/LucideIcon'
 import Group from '@/componentsV2/layout/Group'
@@ -16,7 +15,6 @@ import YStack from '@/componentsV2/layout/YStack'
 import { isReasoningModel } from '@/config/models'
 import { DEFAULT_CONTEXTCOUNT, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE, MAX_CONTEXT_COUNT } from '@/constants'
 import { useProvider } from '@/hooks/useProviders'
-import { presetService } from '@/services/PresetService'
 import type { Assistant, AssistantSettings, Model } from '@/types/assistant'
 import { getBaseModelName } from '@/utils/naming'
 
@@ -73,10 +71,6 @@ export function ModelTabContent({ assistant, updateAssistant }: ModelTabContentP
     })
   }
 
-  const handlePresetPress = () => {
-    presentPresetSheet({ assistant, updateAssistant: handleAssistantChange })
-  }
-
   const model = assistant?.defaultModel ? [assistant.defaultModel] : []
   const providerId = model[0]?.provider ?? ''
   const { provider } = useProvider(providerId)
@@ -84,7 +78,6 @@ export function ModelTabContent({ assistant, updateAssistant }: ModelTabContentP
     ? t(`provider.${providerId}`, { defaultValue: provider?.name ?? providerId })
     : (provider?.name ?? providerId)
   const settings = assistant.settings || {}
-  const selectedPreset = presetService.getPreset(settings.presetId)
 
   return (
     <MotiView
@@ -122,23 +115,6 @@ export function ModelTabContent({ assistant, updateAssistant }: ModelTabContentP
             </Text>
           </Button.Label>
         )}
-        <ChevronRight size={14} />
-      </Button>
-      <Button
-        pressableFeedbackVariant="ripple"
-        variant="tertiary"
-        className="bg-card justify-between rounded-xl border-0"
-        onPress={handlePresetPress}>
-        <Button.Label className="min-w-0 flex-1">
-          <XStack className="min-w-0 flex-1 items-center gap-2 overflow-hidden">
-            <Text className="min-w-0 flex-1 text-base" numberOfLines={1} ellipsizeMode="tail">
-              预设
-            </Text>
-            <Text className="min-w-0 text-base opacity-70" numberOfLines={1} ellipsizeMode="tail">
-              {selectedPreset?.name || '未选择'}
-            </Text>
-          </XStack>
-        </Button.Label>
         <ChevronRight size={14} />
       </Button>
       <Group>

@@ -1,13 +1,17 @@
+import { Button } from 'heroui-native'
 import { MotiView } from 'moti'
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pressable } from 'react-native'
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
 
+import Text from '@/componentsV2/base/Text'
 import TextField from '@/componentsV2/base/TextField'
 import { presentPromptDetailSheet } from '@/componentsV2/features/Sheet/PromptDetailSheet'
+import XStack from '@/componentsV2/layout/XStack'
 import YStack from '@/componentsV2/layout/YStack'
 import type { Assistant } from '@/types/assistant'
+import { PROMPT_VARIABLES } from '@/utils/promptVariables'
 
 interface PromptTabContentProps {
   assistant: Assistant
@@ -39,6 +43,13 @@ export function PromptTabContent({ assistant, updateAssistant }: PromptTabConten
     }
   }
 
+  const appendPromptVariable = (variable: string) => {
+    const separator = formData.prompt.trim().length ? '\n' : ''
+    const prompt = `${formData.prompt}${separator}${variable}`
+    setFormData(prev => ({ ...prev, prompt }))
+    updateAssistant({ ...assistant, name: formData.name, prompt })
+  }
+
   return (
     <MotiView
       style={{ flex: 1 }}
@@ -65,6 +76,25 @@ export function PromptTabContent({ assistant, updateAssistant }: PromptTabConten
               onEndEditing={handleSave}
             />
           </TextField>
+
+          <YStack className="gap-2">
+            <Text className="text-foreground-secondary text-xs font-medium">助手变量</Text>
+            <XStack className="flex-wrap gap-2">
+              {PROMPT_VARIABLES.map(variable => (
+                <Button
+                  key={variable.key}
+                  size="sm"
+                  variant="tertiary"
+                  className="bg-card h-8 rounded-xl border-0 px-2"
+                  onPress={() => appendPromptVariable(variable.key)}>
+                  <Button.Label className="text-xs">{variable.key}</Button.Label>
+                </Button>
+              ))}
+            </XStack>
+            <Text className="text-foreground-secondary text-xs opacity-60">
+              发送时自动替换为当前日期、时间、模型、助手名称等信息。
+            </Text>
+          </YStack>
 
           <TextField className="flex-1 gap-2">
             <TextField.Label className="text-foreground-secondary text-sm font-medium">

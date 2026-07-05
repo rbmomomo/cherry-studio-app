@@ -11,7 +11,6 @@ import { McpToolSheet } from '@/componentsV2/features/Sheet/McpToolSheet'
 import ModelSheet from '@/componentsV2/features/Sheet/ModelSheet'
 import PromptDetailSheet from '@/componentsV2/features/Sheet/PromptDetailSheet'
 import ProviderCheckSheet from '@/componentsV2/features/Sheet/ProviderCheckSheet'
-import { PresetSheet } from '@/componentsV2/features/Sheet/PresetSheet'
 import { ReasoningSheet } from '@/componentsV2/features/Sheet/ReasoningSheet'
 import TextEditSheet from '@/componentsV2/features/Sheet/TextEditSheet'
 import { ThinkingDetailSheet } from '@/componentsV2/features/Sheet/ThinkingDetailSheet'
@@ -48,7 +47,6 @@ const SheetManager: React.FC = () => {
       <ExpandInputSheet />
       <PromptDetailSheet />
       <ProviderCheckSheet />
-      <PresetSheet />
       <HeadersEditSheet />
       <McpDescriptionSheet />
       <McpToolSheet />

@@ -33,6 +33,7 @@ import { loggerService } from '@/services/LoggerService'
 import { estimateTextTokens } from '@/services/TokenService'
 import type { Assistant, Model } from '@/types/assistant'
 import { EFFORT_RATIO } from '@/types/assistant'
+import { replacePromptVariables } from '@/utils/promptVariables'
 import type {
   ErrorChunk,
   LLMWebSearchCompleteChunk,
@@ -566,7 +567,7 @@ export class AnthropicAPIClient extends BaseApiClient<
       }> => {
         const { messages, mcpTools, maxTokens, streamOutput, enableWebSearch } = coreRequest
         // 1. 处理系统消息
-        const systemPrompt = assistant.prompt
+        const systemPrompt = replacePromptVariables(assistant.prompt || '', assistant, model)
 
         // 2. 设置工具
         const { tools } = this.setupToolsConfig({

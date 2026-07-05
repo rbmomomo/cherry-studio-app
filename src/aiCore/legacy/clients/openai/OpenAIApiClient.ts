@@ -43,6 +43,7 @@ import {
 import { DEFAULT_MAX_TOKENS } from '@/constants'
 import { loggerService } from '@/services/LoggerService'
 import { processPostsuffixQwen3Model, processReqMessages } from '@/services/ModelMessageService'
+import { replacePromptVariables } from '@/utils/promptVariables'
 import { estimateTextTokens } from '@/services/TokenService'
 import type { Assistant, Model, OpenAIServiceTier } from '@/types/assistant'
 import { EFFORT_RATIO, isSystemProvider, SystemProviderIds } from '@/types/assistant'
@@ -610,7 +611,10 @@ export class OpenAIAPIClient extends OpenAIBaseClient<
         // }
 
         // 1. 处理系统消息
-        const systemMessage = { role: 'system', content: assistant.prompt || '' }
+        const systemMessage = {
+          role: 'system',
+          content: replacePromptVariables(assistant.prompt || '', assistant, model)
+        }
 
         if (
           isSupportedReasoningEffortOpenAIModel(model) &&

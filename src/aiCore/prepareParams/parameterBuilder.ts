@@ -25,6 +25,7 @@ import type { StreamTextParams } from '@/types/aiCoretypes'
 import type { Assistant, Provider } from '@/types/assistant'
 import type { MCPTool } from '@/types/tool'
 import type { CherryWebSearchConfig } from '@/types/websearch'
+import { replacePromptVariables } from '@/utils/promptVariables'
 import { buildProviderBuiltinWebSearchConfig } from '@/utils/websearch'
 
 import { getAiSdkProviderId } from '../provider/factory'
@@ -201,8 +202,7 @@ export async function buildStreamTextParams(
   }
 
   if (assistant.prompt) {
-    // params.system = await replacePromptVariables(assistant.prompt, model.name)
-    params.system = assistant.prompt
+    params.system = replacePromptVariables(assistant.prompt, assistant, model)
   }
 
   logger.debug('params', params)
